@@ -398,6 +398,16 @@ public:
         std::string code;
         if (wait && this->m_gcode_flavor != (gcfTeacup) && this->m_gcode_flavor != (gcfRepRap) && this->m_gcode_flavor != (gcfSprinter)) {
             code = "M109";
+            // 用更加魔法的 gcode，这段是我自己加的补丁
+            // 先设置温度，然后用一个范围等待来加速过程
+            set_extruder_temp(temperature, tool, false, comment);
+
+            int wait_min_temperature  = temperature - 5;
+            int wait_max_temperature = temperature + 5;
+            m_gcode += "TEMPERATURE_WAIT SENSOR=extruder  minimum=" + wait_min_temperature +
+                       " maximum=" + wait_max_temperature + " \n";
+
+            return *this;
         } else {
             if (this->m_gcode_flavor == (gcfRepRap)) { // M104 is deprecated on RepRapFirmware
                 code = "G10";
@@ -716,7 +726,7 @@ void WipeTower::set_extruder(size_t idx)
         m_filpar[idx].filament_toolchange_temp            = m_config->filament_toolchange_temp.get_at(idx);            // skinnydip
         m_filpar[idx].filament_enable_toolchange_part_fan = m_config->filament_enable_toolchange_part_fan.get_at(idx); // skinnydip
         m_filpar[idx].filament_toolchange_part_fan_speed  = m_config->filament_toolchange_part_fan_speed.get_at(idx);  // skinnydip
-        m_filpar[idx].filament_use_skinnydip              = m_config->filament_use_skinnydip.get_at(idx);              // skinnydip
+        m_filpar[idx].filament_use_skinnydip      = m_config->filament_use_skinnydip.get_at(idx);      // skinnydip
         m_filpar[idx].filament_use_fast_skinnydip         = m_config->filament_use_fast_skinnydip.get_at(idx);         // skinnydip
         m_filpar[idx].filament_skinnydip_distance         = float(m_config->filament_skinnydip_distance.get_at(idx));  // skinnydip
         m_filpar[idx].filament_melt_zone_pause            = m_config->filament_melt_zone_pause.get_at(idx);            // skinnydip
@@ -960,6 +970,19 @@ void WipeTower::toolchange_Unload(
 	float remaining = xr - xl ;							// keeps track of distance to the next turnaround
 	float e_done = 0;									// measures E move done from each segment
 
+    // BEGIN SKINNYDIP SECTION
+    if (m_semm) {
+        // tool
+        // wait for extruder to reach toolchange temperature after cooling moves complete (SKINNYDIP--fast mode only)
+        if ((m_filpar[m_current_tool].filament_enable_toolchange_temp == true)) {
+            writer.wait_for_toolchange_temp(m_filpar[m_current_tool].filament_toolchange_temp,
+                                            m_filpar[m_current_tool].filament_enable_toolchange_part_fan,
+                                            m_filpar[m_current_tool].filament_toolchange_part_fan_speed,
+                                            false); // fast mode
+        }
+    }
+
+
 	writer.travel(xl, cleaning_box.ld.y() + m_depth_traversed + y_step/2.f ); // move to starting position
 
     // if the ending point of the ram would end up in mid air, align it with the end of the wipe tower:
@@ -1127,16 +1150,17 @@ void WipeTower::toolchange_Unload(
             (m_filpar[m_current_tool].filament_use_fast_skinnydip == true)) {
         //begin to restore pre toolchange temp after skinnydip move completes without delay  (SKINNYDIP--fast method)
         if (new_temperature != 0)
-            writer.restore_pre_toolchange_temp(new_temperature, true); //skinnydip fast mode only
+            // 不等了
+            writer.restore_pre_toolchange_temp(new_temperature, false); //skinnydip fast mode only
         else
-            writer.restore_pre_toolchange_temp(m_filpar[m_current_tool].temperature, true); //skinnydip fast mode only
+            writer.restore_pre_toolchange_temp(m_filpar[m_current_tool].temperature, false); //skinnydip fast mode only
     }
     //the following temperature change is suppressed if using skinnydip normal mode since it has already happened
     else if (is_first_layer() && (m_filpar[m_current_tool].filament_enable_toolchange_temp == true) &&
                                             (m_filpar[m_current_tool].filament_use_fast_skinnydip == true)){
         // obey first layer temperature setting
         if (new_temperature != 0 && (new_temperature != m_old_temperature || is_first_layer()) ) {
-            writer.restore_pre_toolchange_temp(new_temperature, true); //skinnydip fast mode only
+            writer.restore_pre_toolchange_temp(new_temperature, false); //skinnydip fast mode only
             m_old_temperature = new_temperature;
         }
     }
