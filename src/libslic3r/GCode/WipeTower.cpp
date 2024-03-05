@@ -1,5 +1,5 @@
 #include "WipeTower.hpp"
-
+ 
 #include <cassert>
 #include <iostream>
 #include <vector>
@@ -398,14 +398,17 @@ public:
         std::string code;
         if (wait && this->m_gcode_flavor != (gcfTeacup) && this->m_gcode_flavor != (gcfRepRap) && this->m_gcode_flavor != (gcfSprinter)) {
             code = "M109";
-            // ÓÃ¸ü¼ÓÄ§·¨µÄ gcode£¬Õâ¶ÎÊÇÎÒ×Ô¼º¼ÓµÄ²¹¶¡
-            // ÏÈÉèÖÃÎÂ¶È£¬È»ºóÓÃÒ»¸ö·¶Î§µÈ´ıÀ´¼ÓËÙ¹ı³Ì
+            // ç”¨æ›´åŠ é­”æ³•çš„ gcodeï¼Œè¿™æ®µæ˜¯æˆ‘è‡ªå·±åŠ çš„è¡¥ä¸
+            // å…ˆè®¾ç½®æ¸©åº¦ï¼Œç„¶åç”¨ä¸€ä¸ªèŒƒå›´ç­‰å¾…æ¥åŠ é€Ÿè¿‡ç¨‹
             set_extruder_temp(temperature, tool, false, comment);
 
             int wait_min_temperature  = temperature - 5;
             int wait_max_temperature = temperature + 5;
-            m_gcode += "TEMPERATURE_WAIT SENSOR=extruder  minimum=" + wait_min_temperature +
-                       " maximum=" + wait_max_temperature + " \n";
+            std::ostringstream sub_gcode;
+            sub_gcode << "TEMPERATURE_WAIT SENSOR=extruder  minimum=" << wait_min_temperature << " maximum="
+                      << wait_max_temperature
+                      << " \n";
+            m_gcode += sub_gcode.str();
 
             return *this;
         } else {
@@ -975,10 +978,8 @@ void WipeTower::toolchange_Unload(
         // tool
         // wait for extruder to reach toolchange temperature after cooling moves complete (SKINNYDIP--fast mode only)
         if ((m_filpar[m_current_tool].filament_enable_toolchange_temp == true)) {
-            writer.wait_for_toolchange_temp(m_filpar[m_current_tool].filament_toolchange_temp,
-                                            m_filpar[m_current_tool].filament_enable_toolchange_part_fan,
-                                            m_filpar[m_current_tool].filament_toolchange_part_fan_speed,
-                                            false); // fast mode
+            writer.set_extruder_temp(m_filpar[m_current_tool].filament_toolchange_temp, this->m_current_tool, false,
+                              ";SKINNYDIP TOOLCHANGE WAIT FOR TEMP " + false ? "FAST MODE" : "NORMAL MODE");
         }
     }
 
@@ -1150,7 +1151,7 @@ void WipeTower::toolchange_Unload(
             (m_filpar[m_current_tool].filament_use_fast_skinnydip == true)) {
         //begin to restore pre toolchange temp after skinnydip move completes without delay  (SKINNYDIP--fast method)
         if (new_temperature != 0)
-            // ²»µÈÁË
+            // ä¸ç­‰äº†
             writer.restore_pre_toolchange_temp(new_temperature, false); //skinnydip fast mode only
         else
             writer.restore_pre_toolchange_temp(m_filpar[m_current_tool].temperature, false); //skinnydip fast mode only
